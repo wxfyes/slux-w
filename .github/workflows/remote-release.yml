@@ -201,7 +201,7 @@ jobs:
           Copy-Item -Path "windows/runner/resources/app_icon.ico" -Destination "$buildDir/app_icon.ico"
           New-Item -ItemType Directory -Path "$buildDir/core" -Force
           Copy-Item -Path "temp_core_backup/sing-box.exe" -Destination "$buildDir/core/sing-box.exe" -Force
-          Copy-Item -Path "temp_core_backup/wintun.dll" -Destination "$buildDir/core/wintun.dll" -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path "temp_core_backup/wintun.dll" -Destination "temp_core_backup/wintun.dll" -Force -ErrorAction SilentlyContinue
           Compress-Archive -Path "$buildDir\*" -DestinationPath "slux-windows-x64.zip"
 
       - name: Create Installer using Inno Setup
@@ -400,7 +400,7 @@ jobs:
         with:
           token: ${{ secrets.PUBLIC_REPO_TOKEN }}
           owner: tianquege
-          repo: Slux-tianque
+          repo: slux
           tag: "v${{ env.VERSION }}"
           name: "Slux v${{ env.VERSION }}"
           body: "Automated Remote Release via wxfyes builder."
