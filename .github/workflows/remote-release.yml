@@ -1,4 +1,4 @@
-name: Remote Master Builder
+name: Remote Master Builder (Legacy Sync)
 
 on:
   workflow_dispatch:
@@ -17,10 +17,6 @@ on:
         default: true
       build_macos:
         description: 'Build macOS?'
-        type: boolean
-        default: true
-      build_linux:
-        description: 'Build Linux?'
         type: boolean
         default: true
       upload_release:
@@ -103,13 +99,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
-          SOURCE_ICON="assets/app_icon.png"
           ANDROID_PATH="android/app/src/main/res"
           mkdir -p "$ANDROID_PATH/mipmap-mdpi"
           mkdir -p "$ANDROID_PATH/mipmap-hdpi"
           mkdir -p "$ANDROID_PATH/mipmap-xhdpi"
           mkdir -p "$ANDROID_PATH/mipmap-xxhdpi"
           mkdir -p "$ANDROID_PATH/mipmap-xxxhdpi"
+          SOURCE_ICON="assets/app_icon.png"
           convert "$SOURCE_ICON" -resize 48x48 "$ANDROID_PATH/mipmap-mdpi/ic_launcher.png"
           convert "$SOURCE_ICON" -resize 72x72 "$ANDROID_PATH/mipmap-hdpi/ic_launcher.png"
           convert "$SOURCE_ICON" -resize 96x96 "$ANDROID_PATH/mipmap-xhdpi/ic_launcher.png"
@@ -201,7 +197,7 @@ jobs:
           Copy-Item -Path "windows/runner/resources/app_icon.ico" -Destination "$buildDir/app_icon.ico"
           New-Item -ItemType Directory -Path "$buildDir/core" -Force
           Copy-Item -Path "temp_core_backup/sing-box.exe" -Destination "$buildDir/core/sing-box.exe" -Force
-          Copy-Item -Path "temp_core_backup/wintun.dll" -Destination "temp_core_backup/wintun.dll" -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path "temp_core_backup/wintun.dll" -Destination "$buildDir/core/wintun.dll" -Force -ErrorAction SilentlyContinue
           Compress-Archive -Path "$buildDir\*" -DestinationPath "slux-windows-x64.zip"
 
       - name: Create Installer using Inno Setup
@@ -251,6 +247,12 @@ jobs:
           magick composite -gravity center temp_bolt.png temp_bg.png temp_icon.png
           cp temp_icon.png ui/logo.png
           magick convert temp_icon.png -resize 1024x1024 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png
+          magick convert temp_icon.png -resize 512x512 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png
+          magick convert temp_icon.png -resize 256x256 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png
+          magick convert temp_icon.png -resize 128x128 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png
+          magick convert temp_icon.png -resize 64x64 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_64.png
+          magick convert temp_icon.png -resize 32x32 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_32.png
+          magick convert temp_icon.png -resize 16x16 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_16.png
           rm temp_bg.png temp_bolt.png temp_icon.png
 
       - name: Setup Go
@@ -293,6 +295,13 @@ jobs:
           cp -R slux.app dmg_source/
           create-dmg \
             --volname "Slux Installer" \
+            --volicon "slux.app/Contents/Resources/AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "slux.app" 175 120 \
+            --hide-extension "slux.app" \
+            --app-drop-link 425 120 \
             "Slux-Installer.dmg" \
             "dmg_source"
           mv Slux-Installer.dmg ../../../../../slux-macos-installer.dmg
@@ -304,77 +313,12 @@ jobs:
           path: slux-macos-installer.dmg
 
   # =================================================================================================
-  # 4. Linux Build Job
-  # =================================================================================================
-  build-linux:
-    if: ${{ github.event.inputs.build_linux == 'true' }}
-    name: Build Linux App
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code from wangn9900
-        uses: actions/checkout@v4
-        with:
-          repository: wangn9900/Slux
-          ref: ${{ github.event.inputs.branch }}
-          token: ${{ secrets.SOURCE_REPO_TOKEN }}
-
-      - name: Install Linux Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Compile Sing-box Core (Linux x64)
-        run: |
-          mkdir -p assets/core
-          SING_BOX_TAG="v1.12.15"
-          git clone --depth 1 --branch ${SING_BOX_TAG} https://github.com/SagerNet/sing-box.git source_code
-          cd source_code
-          TAGS="with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,netgo,osusergo"
-          LDFLAGS="-s -w -X github.com/sagernet/sing-box/constant.Version=${SING_BOX_TAG}"
-          export CGO_ENABLED=0
-          export GOOS=linux
-          export GOARCH=amd64
-          go build -tags "$TAGS" -trimpath -ldflags "$LDFLAGS" -o ../assets/core/sing-box ./cmd/sing-box
-          cd ..
-          chmod +x assets/core/sing-box
-          rm -rf source_code
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-
-      - name: Get Flutter dependencies
-        run: flutter pub get
-
-      - name: Build Linux Release
-        run: |
-          flutter config --enable-linux-desktop
-          flutter build linux --release
-
-      - name: Package Linux Release
-        run: |
-          cd build/linux/x64/release/bundle
-          tar -czvf ../../../../../slux-linux-x64.tar.gz .
-
-      - name: Upload Linux Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: slux-linux-release
-          path: slux-linux-x64.tar.gz
-
-  # =================================================================================================
-  # 5. Final Release Job
+  # 4. Final Release Job
   # =================================================================================================
   publish-release:
     if: ${{ always() && github.event.inputs.upload_release == 'true' }}
     name: Publish All to Public Repo
-    needs: [build-android, build-windows, build-macos, build-linux]
+    needs: [build-android, build-windows, build-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code from wangn9900
@@ -395,6 +339,19 @@ jobs:
         with:
           path: release_artifacts
 
+      - name: Update Public Repo Documentation
+        run: |
+          git config --global user.name "Slux Bot"
+          git config --global user.email "bot@slux.dev"
+          git clone https://${{ secrets.PUBLIC_REPO_TOKEN }}@github.com/tianquege/slux.git public_repo
+          cp docs/MACOS_GUIDE.md public_repo/README.md
+          cd public_repo
+          if [[ -n $(git status -s) ]]; then
+            git add README.md
+            git commit -m "Docs: Update README [skip ci]"
+            git push origin HEAD:main
+          fi
+
       - name: Publish to Public Repository
         uses: ncipollo/release-action@v1
         with:
@@ -403,13 +360,19 @@ jobs:
           repo: slux
           tag: "v${{ env.VERSION }}"
           name: "Slux v${{ env.VERSION }}"
-          body: "Automated Remote Release via wxfyes builder."
+          body: |
+            Automated Release (Android + Windows + MacOS)
+            
+            - **Android**: Signed APK.
+            - **Windows**: Unsigned Release build (ZIP + Installer).
+            - **macOS**: Universal Binary (Intel + Apple Silicon), ad-hoc signed.
+            
+            SHA: ${{ github.sha }}
           artifacts: |
             release_artifacts/slux-android-apks/*.apk
             release_artifacts/slux-windows-release/slux-windows-x64.zip
             release_artifacts/slux-windows-release/slux_setup.exe
             release_artifacts/slux-macos-release/slux-macos-installer.dmg
-            release_artifacts/slux-linux-release/slux-linux-x64.tar.gz
           allowUpdates: true
           replacesArtifacts: true
           makeLatest: true
