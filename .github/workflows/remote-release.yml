@@ -1,21 +1,35 @@
-name: Remote Release (Build from wangn9900)
+name: Remote Master Builder
 
 on:
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to build from wangn9900/Slux'
+        description: 'Source Branch/Tag (from wangn9900/Slux)'
         required: true
         default: 'main'
-  push:
-    tags:
-      - "v*"
+      build_android:
+        description: 'Build Android?'
+        type: boolean
+        default: true
+      build_windows:
+        description: 'Build Windows?'
+        type: boolean
+        default: true
+      build_macos:
+        description: 'Build macOS?'
+        type: boolean
+        default: true
+      upload_release:
+        description: 'Upload to Release (tianquege)?'
+        type: boolean
+        default: true
 
 jobs:
   # =================================================================================================
   # 1. Android Build Job
   # =================================================================================================
   build-android:
+    if: ${{ github.event.inputs.build_android == 'true' }}
     name: Build Android APK
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wangn9900/Slux
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
+          ref: ${{ github.event.inputs.branch }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
 
       - name: Setup Go
@@ -52,7 +66,6 @@ jobs:
           go install golang.org/x/mobile/cmd/gobind@latest
           echo "GOBIND=$(go env GOPATH)/bin/gobind" >> $GITHUB_ENV
           gomobile init
-
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -86,22 +99,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
-          
-          # Android Launcher Icons
+          SOURCE_ICON="assets/app_icon.png"
           ANDROID_PATH="android/app/src/main/res"
           mkdir -p "$ANDROID_PATH/mipmap-mdpi"
           mkdir -p "$ANDROID_PATH/mipmap-hdpi"
           mkdir -p "$ANDROID_PATH/mipmap-xhdpi"
           mkdir -p "$ANDROID_PATH/mipmap-xxhdpi"
           mkdir -p "$ANDROID_PATH/mipmap-xxxhdpi"
-          SOURCE_ICON="assets/app_icon.png"
           convert "$SOURCE_ICON" -resize 48x48 "$ANDROID_PATH/mipmap-mdpi/ic_launcher.png"
           convert "$SOURCE_ICON" -resize 72x72 "$ANDROID_PATH/mipmap-hdpi/ic_launcher.png"
           convert "$SOURCE_ICON" -resize 96x96 "$ANDROID_PATH/mipmap-xhdpi/ic_launcher.png"
           convert "$SOURCE_ICON" -resize 144x144 "$ANDROID_PATH/mipmap-xxhdpi/ic_launcher.png"
           convert "$SOURCE_ICON" -resize 192x192 "$ANDROID_PATH/mipmap-xxxhdpi/ic_launcher.png"
-          
-          # Notification Icons (Transparent)
           dart run scripts/generate_notification_icon.dart
 
       - name: Build Android APK
@@ -110,7 +119,6 @@ jobs:
           flutter clean
           rm -rf android/app/libs/*
           mkdir -p android/app/libs
-          
           pushd core/mobile
           gomobile bind -v -androidapi 21 -target=android/arm,android/arm64 \
             -ldflags='-s -w -checklinkname=0' \
@@ -118,7 +126,6 @@ jobs:
             -o ../../android/app/libs/libbox.aar \
             . github.com/sagernet/sing-box/experimental/libbox
           popd
-          
           flutter build apk --release --target-platform android-arm,android-arm64 --split-per-abi
           mv build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk android_dist/
           mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk android_dist/
@@ -126,7 +133,6 @@ jobs:
           flutter clean
           rm -rf android/app/libs/*
           mkdir -p android/app/libs
-          
           pushd core/mobile
           gomobile bind -v -androidapi 21 -target=android/386,android/amd64 \
             -ldflags='-s -w -checklinkname=0' \
@@ -134,7 +140,6 @@ jobs:
             -o ../../android/app/libs/libbox.aar \
             . github.com/sagernet/sing-box/experimental/libbox
           popd
-          
           flutter build apk --release --target-platform android-x64
           mv build/app/outputs/flutter-apk/app-release.apk android_dist/app-x86-x64-release.apk
 
@@ -148,6 +153,7 @@ jobs:
   # 2. Windows Build Job
   # =================================================================================================
   build-windows:
+    if: ${{ github.event.inputs.build_windows == 'true' }}
     name: Build Windows App
     runs-on: windows-latest
     steps:
@@ -155,7 +161,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wangn9900/Slux
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
+          ref: ${{ github.event.inputs.branch }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
 
       - name: Setup Go
@@ -174,13 +180,6 @@ jobs:
       - name: Download Sing-box core
         run: |
           ./scripts/download_core.ps1 -Platform windows -Force
-          $corePath = "assets/core/sing-box.exe"
-          $bytes = [System.IO.File]::ReadAllBytes($corePath)[0..1]
-          $header = [System.Text.Encoding]::ASCII.GetString($bytes)
-          if ($header -ne "MZ") {
-            Write-Error "ERROR: Downloaded file is NOT a valid Windows PE executable!"
-            exit 1
-          }
           New-Item -ItemType Directory -Path "temp_core_backup" -Force
           Copy-Item -Path "assets/core/sing-box.exe" -Destination "temp_core_backup/sing-box.exe" -Force
           Copy-Item -Path "assets/core/wintun.dll" -Destination "temp_core_backup/wintun.dll" -Force -ErrorAction SilentlyContinue
@@ -221,6 +220,7 @@ jobs:
   # 3. macOS Build Job
   # =================================================================================================
   build-macos:
+    if: ${{ github.event.inputs.build_macos == 'true' }}
     name: Build macOS App
     runs-on: macos-latest
     steps:
@@ -228,7 +228,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wangn9900/Slux
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
+          ref: ${{ github.event.inputs.branch }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
 
       - name: Setup Flutter
@@ -247,9 +247,6 @@ jobs:
           magick composite -gravity center temp_bolt.png temp_bg.png temp_icon.png
           cp temp_icon.png ui/logo.png
           magick convert temp_icon.png -resize 1024x1024 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png
-          magick convert temp_icon.png -resize 512x512 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png
-          magick convert temp_icon.png -resize 256x256 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png
-          magick convert temp_icon.png -resize 128x128 macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png
           rm temp_bg.png temp_bolt.png temp_icon.png
 
       - name: Setup Go
@@ -271,7 +268,6 @@ jobs:
           export MACOSX_DEPLOYMENT_TARGET=10.13
           go build -tags "$TAGS" -trimpath -ldflags "$LDFLAGS" -o ../sing-box-arm64 ./cmd/sing-box
           cd ..
-          chmod +x macos/sing-box
           lipo -create -output assets/core/sing-box macos/sing-box ./sing-box-arm64
           chmod +x assets/core/sing-box
           rm -rf source_code sing-box-arm64
@@ -283,9 +279,7 @@ jobs:
         run: cp ui/logo.png build/macos/Build/Products/Release/slux.app/Contents/Resources/tray_icon.png
 
       - name: Ad-hoc Sign
-        run: |
-          codesign --force --deep --sign - build/macos/Build/Products/Release/slux.app
-          codesign --verify --verbose build/macos/Build/Products/Release/slux.app || true
+        run: codesign --force --deep --sign - build/macos/Build/Products/Release/slux.app
 
       - name: Package DMG
         run: |
@@ -295,7 +289,6 @@ jobs:
           cp -R slux.app dmg_source/
           create-dmg \
             --volname "Slux Installer" \
-            --volicon "slux.app/Contents/Resources/AppIcon.icns" \
             "Slux-Installer.dmg" \
             "dmg_source"
           mv Slux-Installer.dmg ../../../../../slux-macos-installer.dmg
@@ -310,6 +303,7 @@ jobs:
   # 4. Final Release Job
   # =================================================================================================
   publish-release:
+    if: ${{ always() && github.event.inputs.upload_release == 'true' }}
     name: Publish All to Public Repo
     needs: [build-android, build-windows, build-macos]
     runs-on: ubuntu-latest
@@ -318,7 +312,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wangn9900/Slux
-          ref: ${{ github.event.inputs.branch || github.ref_name }}
+          ref: ${{ github.event.inputs.branch }}
           token: ${{ secrets.SOURCE_REPO_TOKEN }}
 
       - name: Extract Version
@@ -353,12 +347,7 @@ jobs:
           repo: Slux-tianque
           tag: "v${{ env.VERSION }}"
           name: "Slux v${{ env.VERSION }}"
-          body: |
-            Automated Remote Release (Build via wxfyes, Source from wangn9900)
-            
-            - **Android**: Signed APK.
-            - **Windows**: Unsigned Release build (ZIP + Installer).
-            - **macOS**: Universal Binary (Intel + Apple Silicon), ad-hoc signed.
+          body: "Automated Remote Release via wxfyes builder."
           artifacts: |
             release_artifacts/slux-android-apks/*.apk
             release_artifacts/slux-windows-release/slux-windows-x64.zip
